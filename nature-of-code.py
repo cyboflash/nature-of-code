@@ -11,7 +11,7 @@ SCREEN_COLOR = pygame.Color("white")
 
 SCREEN = pygame.display.set_mode(SCREEN_SIZE)
 FRAME_RATE = 30
-NBR_MOVERS = 100
+NBR_MOVERS = 20
 
 class PVector(object):
   tx = 0.001
@@ -61,7 +61,8 @@ class PVector(object):
     return PVector(vector1.x - vector2.x, vector1.y - vector2.y)
 
 class Mover(object):
-  COLOR = pygame.Color("black")
+  CIRCLE_COLOR = (0, 0, 0, 127)
+  RIM_COLOR = pygame.Color("black")
   def __init__(self, m, x, y):
     self.location = PVector(x, y)
     self.velocity = PVector(0, 0)
@@ -69,10 +70,23 @@ class Mover(object):
     self.mass = m
 
     surface = pygame.Surface((self.mass, self.mass), pygame.SRCALPHA, 32)
-    pygame.draw.circle(surface, self.COLOR,
-                       (int(surface.get_width()/2),
-                        int(surface.get_height()/2)),
-                       int(self.mass/2), 2)
+    surface = surface.convert_alpha()
+
+    width = int(math.ceil(0.05*self.mass))
+    pygame.draw.circle(
+        surface,
+        self.RIM_COLOR,
+        (int(surface.get_width()/2), int(surface.get_height()/2)),
+        int(self.mass/2), width
+    )
+
+    pygame.draw.circle(
+        surface,
+        self.CIRCLE_COLOR,
+        (int(surface.get_width()/2), int(surface.get_height()/2)),
+        int(math.ceil(self.mass/2 - width)) + 1
+    )
+
     self.rect = surface.get_rect()
     self.surface = subpixelsurface.SubPixelSurface(surface)
 
@@ -107,6 +121,34 @@ class Mover(object):
     force.div(self.mass)
     self.acceleration.add(force)
 
+  def repel(self, m):
+    force = PVector.sub_vector(m.location, self.location)
+    distance = force.mag()
+    if distance - self.mass/2 - m.mass/2 < 20:
+      g = 0.8
+
+      force.normalize()
+      force.mult(g*self.mass*m.mass)
+      force.div(2*distance)
+
+      m.apply_force(force)
+
+  def attract(self, m):
+    g = 0.4
+    force = PVector.sub_vector(self.location, m.location)
+    distance = force.mag()
+
+    # Constrain the distance
+    if distance < 50:
+      distance = 50
+    if distance > 100:
+      distance = 100
+
+    force.normalize()
+    force.mult(g*self.mass*m.mass)
+    force.div(distance**2)
+
+    m.apply_force(force)
 
 class Liquid(object):
   def __init__(self, drag, x, y, width, height):
@@ -173,13 +215,7 @@ def main():
                   random.randrange(SCREEN_WIDTH),
                   random.randrange(SCREEN_HEIGHT)) for i in range(NBR_MOVERS)]
 
-  attractors = [Attractor(random.randrange(SCREEN_WIDTH),
-                          random.randrange(SCREEN_HEIGHT),
-                          random.gauss(150, 20),
-                          random.gauss(4, 1)) for i in range(5)]
-
   clock = pygame.time.Clock()
-
 
   while True:
     clock.tick(FRAME_RATE)
@@ -187,17 +223,16 @@ def main():
       if event.type == pygame.QUIT: sys.exit()
 
     SCREEN.fill(SCREEN_COLOR)
-    for a in attractors:
-      a.display()
 
-    for i in range(len(movers)):
-      attractions = [a.get_attarction(movers[i]) for a in attractors]
+    for i in movers:
+      for j in movers:
+        if i != j:
+          i.attract(j)
+          i.repel(j)
 
-      for a in attractions:
-        movers[i].apply_force(a)
-      movers[i].update()
-      # movers[i].check_edges()
-      movers[i].display()
+    for m in movers:
+      m.update()
+      m.display()
 
     pygame.display.flip()
 
